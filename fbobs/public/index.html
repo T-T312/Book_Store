@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Favourite Books</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Nav -->
+    <nav id="navbar">
+      <div class="nav-brand" onclick="navigate('home')">
+        <span class="brand-icon">📚</span>
+        <span class="brand-name">Favourite Books</span>
+      </div>
+      <div class="nav-links" id="navLinks"></div>
+      <div class="nav-actions">
+        <button class="cart-btn" id="cartBtn" onclick="navigate('cart')" style="display:none">
+          🛒 <span id="cartCount">0</span>
+        </button>
+        <div id="userMenu"></div>
+      </div>
+    </nav>
+
+    <!-- Pages -->
+    <main id="main"></main>
+
+    <!-- Toast -->
+    <div id="toast"></div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal-overlay" style="display:none">
+      <div class="modal-box" id="modalBox"></div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

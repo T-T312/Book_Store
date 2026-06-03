@@ -1,0 +1,16 @@
+{
+  "name": "fbobs",
+  "version": "1.0.0",
+  "description": "Favourite Books Online Bookstore System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.22.2",
+    "express-session": "^1.19.0",
+    "sql.js": "^1.14.1"
+  }
+}
