@@ -15,7 +15,8 @@ class BookRouter {
     this.router.get('/:id',        (req, res) => this.controller.getOne(req, res));
     this.router.post('/',          AuthMiddleware.requireAdmin, (req, res) => this.controller.create(req, res));
     this.router.put('/:id',        AuthMiddleware.requireAdmin, (req, res) => this.controller.update(req, res));
-    this.router.delete('/:id',     AuthMiddleware.requireAdmin, (req, res) => this.controller.delete(req, res));
+    this.router.delete('/:id',          AuthMiddleware.requireAdmin, (req, res) => this.controller.delete(req, res));
+    this.router.delete('/:id/remove',   AuthMiddleware.requireAdmin, (req, res) => this.controller.remove(req, res));
   }
 }
 

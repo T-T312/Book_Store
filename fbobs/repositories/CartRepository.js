@@ -5,7 +5,7 @@ class CartRepository {
 
   getItems(userId) {
     return this.db.query(`
-      SELECT ci.id, ci.quantity, b.id as book_id, b.title, b.author, b.price, b.stock, b.cover_url
+      SELECT ci.id, ci.quantity, b.id as book_id, b.title, b.author, b.price, b.stock, b.cover_url, b.status
       FROM cart_items ci JOIN books b ON ci.book_id = b.id
       WHERE ci.user_id=?
     `, [userId]);

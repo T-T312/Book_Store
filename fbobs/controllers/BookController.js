@@ -38,6 +38,14 @@ class BookController {
     this.bookRepository.deactivate(req.params.id);
     res.json({ success: true });
   }
+
+  remove(req, res) {
+    if (this.bookRepository.hasOrders(req.params.id)) {
+      return res.json({ error: 'Cannot remove a book that has order history. Deactivate it instead.' });
+    }
+    this.bookRepository.remove(req.params.id);
+    res.json({ success: true });
+  }
 }
 
 module.exports = BookController;

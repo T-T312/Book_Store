@@ -50,6 +50,15 @@ class BookRepository {
     this.db.run("UPDATE books SET status='inactive' WHERE id=?", [id]);
   }
 
+  hasOrders(id) {
+    const rows = this.db.query("SELECT COUNT(*) as cnt FROM order_items WHERE book_id=?", [id]);
+    return (rows[0]?.cnt || 0) > 0;
+  }
+
+  remove(id) {
+    this.db.run("DELETE FROM books WHERE id=?", [id]);
+  }
+
   decrementStock(id, quantity) {
     this.db.run("UPDATE books SET stock=stock-? WHERE id=?", [quantity, id]);
   }

@@ -86,6 +86,9 @@ function updateCartBadge() {
 // ====================== NAVIGATE ======================
 function navigate(page, params = {}) {
   state.currentPage = page;
+  if (!['order-success', 'book'].includes(page)) {
+    window.location.hash = page;
+  }
   renderNav();
   const main = document.getElementById('main');
   main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -112,10 +115,6 @@ async function renderHome() {
     <div class="page-hero">
       <h1>Your <span class="gold-accent">Story</span> Starts Here</h1>
       <p>Discover thousands of titles — from Glenferrie Road to your doorstep</p>
-      <div style="margin-top:1.5rem;display:flex;gap:1rem;justify-content:center">
-        <button class="btn btn-primary" onclick="navigate('catalogue')">Browse Catalogue</button>
-        ${!state.user ? '<button class="btn btn-outline" onclick="navigate(\'register\')" style="color:white;border-color:rgba(255,255,255,0.5)">Create Account</button>' : ''}
-      </div>
     </div>
     <div class="page">
       <h2 class="section-title">📚 New Arrivals</h2>
@@ -286,10 +285,10 @@ async function renderCart() {
                     <td>$${Number(item.price).toFixed(2)}</td>
                     <td>
                       <div class="cart-qty">
-                        <button onclick="updateQty(${item.book_id}, ${item.quantity - 1})">−</button>
+                        <button onclick="updateQty(${item.book_id}, ${item.quantity - 1})" ${item.quantity <= 1 ? 'disabled' : ''}>−</button>
                         <input type="number" value="${item.quantity}" min="1" max="${item.stock}"
-                          onchange="updateQty(${item.book_id}, parseInt(this.value))">
-                        <button onclick="updateQty(${item.book_id}, ${item.quantity + 1})">+</button>
+                          onchange="updateQty(${item.book_id}, Math.min(parseInt(this.value)||1, ${item.stock}))">
+                        <button onclick="updateQty(${item.book_id}, ${item.quantity + 1})" ${item.quantity >= item.stock ? 'disabled' : ''}>+</button>
                       </div>
                     </td>
                     <td><strong>$${(item.price * item.quantity).toFixed(2)}</strong></td>
@@ -317,6 +316,7 @@ async function renderCart() {
 }
 
 async function updateQty(bookId, qty) {
+  if (qty < 1) return;
   const r = await api('PUT', '/api/cart/update', { book_id: bookId, quantity: qty });
   if (r.error) { toast(r.error, 'error'); renderCart(); return; }
   await loadCart();
@@ -423,14 +423,20 @@ async function placeOrder() {
   if (!/^\d{4}$/.test(post)) { toast('Postcode must be 4 digits', 'error'); return; }
 
   const address = `${addr}, ${suburb} ${stateVal} ${post}, Australia`;
-  const r = await api('POST', '/api/orders/checkout', { address, payment_method: method });
+  let r;
+  try {
+    r = await api('POST', '/api/orders/checkout', { address, payment_method: method });
+  } catch (e) {
+    toast('Server error during checkout. Please restart the server and try again.', 'error');
+    return;
+  }
   if (r.error) { toast(r.error, 'error'); return; }
   await loadCart();
-  navigate('order-success', { orderId: r.orderId, tracking: r.tracking });
+  navigate('order-success', { orderId: r.orderId, tracking: r.tracking, invoiceNumber: r.invoiceNumber });
 }
 
 // ====================== ORDER SUCCESS ======================
-function renderOrderSuccess({ orderId, tracking }) {
+function renderOrderSuccess({ orderId, tracking, invoiceNumber }) {
   document.getElementById('main').innerHTML = `
     <div class="success-page">
       <div class="success-icon">🎉</div>
@@ -441,12 +447,17 @@ function renderOrderSuccess({ orderId, tracking }) {
           <span style="color:var(--muted);font-size:0.85rem">Order ID</span>
           <strong>#${orderId}</strong>
         </div>
-        <div style="display:flex;justify-content:space-between">
+        <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem">
           <span style="color:var(--muted);font-size:0.85rem">Tracking</span>
           <strong style="color:var(--brown)">${tracking}</strong>
         </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:var(--muted);font-size:0.85rem">Invoice</span>
+          <strong style="color:var(--brown)">${invoiceNumber}</strong>
+        </div>
       </div>
       <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-outline" onclick="viewInvoice(${orderId})" style="border-color:var(--brown);color:var(--brown)">🧾 View Invoice</button>
         <button class="btn btn-dark" onclick="navigate('orders')">View My Orders</button>
         <button class="btn btn-primary" onclick="navigate('catalogue')">Continue Shopping</button>
       </div>
@@ -493,8 +504,127 @@ async function renderOrders() {
               ${o.tracking_id ? `<div style="font-size:0.8rem;color:var(--muted);margin-top:0.25rem">Tracking: <strong>${o.tracking_id}</strong></div>` : ''}
               ${o.address ? `<div style="font-size:0.8rem;color:var(--muted)">Delivery to: ${o.address}</div>` : ''}
             </div>
+            <div style="padding:0.75rem 0 0;border-top:1px solid var(--border);margin-top:0.5rem">
+              <button class="btn btn-outline btn-sm" onclick="viewInvoice(${o.id})" style="border-color:var(--brown);color:var(--brown);font-size:0.8rem">🧾 View Invoice</button>
+            </div>
           </div>`).join('')}
     </div>`;
+}
+
+// ====================== INVOICE ======================
+async function viewInvoice(orderId) {
+  let data;
+  try {
+    data = await api('GET', `/api/invoices/order/${orderId}`);
+  } catch (e) {
+    toast('Could not load invoice. Try restarting the server.', 'error');
+    return;
+  }
+  if (data.error) { toast(data.error, 'error'); return; }
+
+  const { invoice_number, issued_at, order } = data;
+  const subtotal = order.total;
+  const gst = subtotal * 0.1;
+  const grandTotal = subtotal + gst;
+  const date = new Date(issued_at).toLocaleDateString('en-AU', { dateStyle: 'long' });
+
+  showModal(`
+    <div style="max-height:80vh;overflow-y:auto;padding:0.5rem">
+      <div id="invoicePrint" style="font-family:Georgia,serif;max-width:600px;margin:0 auto;color:#2c1810">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #8B6914;padding-bottom:1rem;margin-bottom:1.5rem">
+          <div>
+            <div style="font-size:1.6rem;font-weight:700;color:#8B6914;letter-spacing:1px">FBOBS</div>
+            <div style="font-size:0.75rem;color:#666">Favourite Books Online Bookstore</div>
+            <div style="font-size:0.75rem;color:#666">Glenferrie Road, Hawthorn VIC 3122</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:1.1rem;font-weight:700;color:#8B6914">TAX INVOICE</div>
+            <div style="font-size:0.9rem;font-weight:600">${invoice_number}</div>
+            <div style="font-size:0.8rem;color:#666">Issued: ${date}</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem">
+          <div>
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:1px;color:#666;text-transform:uppercase;margin-bottom:0.4rem">Bill To</div>
+            <div style="font-weight:600">${order.customer_name || state.user.name}</div>
+            <div style="font-size:0.85rem;color:#555">${order.customer_email || state.user.email}</div>
+            ${order.address ? `<div style="font-size:0.85rem;color:#555;margin-top:0.25rem">${order.address}</div>` : ''}
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:0.7rem;font-weight:700;letter-spacing:1px;color:#666;text-transform:uppercase;margin-bottom:0.4rem">Order Details</div>
+            <div style="font-size:0.85rem">Order <strong>#${order.id}</strong></div>
+            <div style="font-size:0.85rem">Tracking: <strong>${order.tracking_id}</strong></div>
+            <div style="font-size:0.85rem">Payment: <strong style="text-transform:capitalize">${order.payment_method}</strong></div>
+          </div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:0.875rem">
+          <thead>
+            <tr style="background:#f5ede0;border-bottom:2px solid #8B6914">
+              <th style="padding:0.6rem 0.75rem;text-align:left;font-weight:700">Book</th>
+              <th style="padding:0.6rem 0.75rem;text-align:left;font-weight:700">Author</th>
+              <th style="padding:0.6rem 0.75rem;text-align:center;font-weight:700">Qty</th>
+              <th style="padding:0.6rem 0.75rem;text-align:right;font-weight:700">Unit Price</th>
+              <th style="padding:0.6rem 0.75rem;text-align:right;font-weight:700">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${order.items.map((item, i) => `
+              <tr style="border-bottom:1px solid #eee;background:${i % 2 === 0 ? '#fff' : '#fafafa'}">
+                <td style="padding:0.6rem 0.75rem">${item.title}</td>
+                <td style="padding:0.6rem 0.75rem;color:#666">${item.author}</td>
+                <td style="padding:0.6rem 0.75rem;text-align:center">${item.quantity}</td>
+                <td style="padding:0.6rem 0.75rem;text-align:right">$${Number(item.price_at_purchase).toFixed(2)}</td>
+                <td style="padding:0.6rem 0.75rem;text-align:right">$${(item.price_at_purchase * item.quantity).toFixed(2)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+
+        <div style="display:flex;justify-content:flex-end;margin-bottom:1.5rem">
+          <div style="width:220px">
+            <div style="display:flex;justify-content:space-between;padding:0.35rem 0;font-size:0.875rem">
+              <span style="color:#555">Subtotal (excl. GST)</span>
+              <span>$${subtotal.toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:0.35rem 0;font-size:0.875rem">
+              <span style="color:#555">GST (10%)</span>
+              <span>$${gst.toFixed(2)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:0.35rem 0;font-size:0.875rem">
+              <span style="color:#555">Shipping</span>
+              <span style="color:#4a7c59">Free</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:0.5rem 0.75rem;background:#8B6914;color:#fff;border-radius:4px;font-weight:700;font-size:1rem;margin-top:0.25rem">
+              <span>Total (AUD)</span>
+              <span>$${grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid #ddd;padding-top:1rem;font-size:0.75rem;color:#999;text-align:center">
+          Payment received via ${order.payment_method} &nbsp;·&nbsp; Status: <span style="text-transform:capitalize">${order.status}</span>
+          &nbsp;·&nbsp; Thank you for shopping with FBOBS!
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.75rem;justify-content:flex-end;padding:1rem 0.5rem 0;border-top:1px solid var(--border);margin-top:0.5rem">
+      <button class="btn btn-outline btn-sm" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary btn-sm" onclick="printInvoice()">🖨️ Print / Save PDF</button>
+    </div>
+  `);
+}
+
+function printInvoice() {
+  const content = document.getElementById('invoicePrint').outerHTML;
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>Invoice</title><style>
+    body { margin: 2rem; font-family: Georgia, serif; color: #2c1810; }
+    @media print { body { margin: 1cm; } }
+  </style></head><body>${content}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
 }
 
 // ====================== AUTH ======================
@@ -529,9 +659,12 @@ function renderLogin() {
 async function handleLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pass = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginError');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return;
+  }
   const r = await api('POST', '/api/auth/login', { email, password: pass });
   if (r.error) {
-    const errEl = document.getElementById('loginError');
     errEl.textContent = r.error; errEl.style.display = 'block';
     return;
   }
@@ -573,9 +706,14 @@ async function handleRegister() {
   const name = document.getElementById('regName').value.trim();
   const email = document.getElementById('regEmail').value.trim();
   const pass = document.getElementById('regPass').value;
+  const errEl = document.getElementById('regError');
+  if (!name) { errEl.textContent = 'Please enter your full name.'; errEl.style.display = 'block'; return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errEl.textContent = 'Please enter a valid email address.'; errEl.style.display = 'block'; return;
+  }
+  if (pass.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.style.display = 'block'; return; }
   const r = await api('POST', '/api/auth/register', { name, email, password: pass });
   if (r.error) {
-    const errEl = document.getElementById('regError');
     errEl.textContent = r.error; errEl.style.display = 'block';
     return;
   }
@@ -694,7 +832,8 @@ async function renderAdminBooks() {
               <button class="btn btn-outline btn-sm" onclick="showEditBookModal(${b.id})">Edit</button>
               ${b.status==='active'
                 ? `<button class="btn btn-danger btn-sm" style="margin-left:0.4rem" onclick="deactivateBook(${b.id})">Deactivate</button>`
-                : `<button class="btn btn-sage btn-sm" style="margin-left:0.4rem" onclick="activateBook(${b.id})">Activate</button>`}
+                : `<button class="btn btn-sage btn-sm" style="margin-left:0.4rem" onclick="activateBook(${b.id})">Activate</button>
+                   <button class="btn btn-danger btn-sm" style="margin-left:0.4rem" onclick="removeBook(${b.id})">Remove</button>`}
             </td>
           </tr>`).join('')}
       </tbody>
@@ -824,6 +963,15 @@ async function activateBook(id) {
   renderAdminBooks();
 }
 
+async function removeBook(id) {
+  const b = window._adminBooks.find(x => x.id === id);
+  if (!confirm(`Permanently remove "${b?.title}" from the store? This cannot be undone.`)) return;
+  const r = await api('DELETE', `/api/books/${id}/remove`);
+  if (r.error) { toast(r.error, 'error'); return; }
+  toast('Book removed from store', 'success');
+  renderAdminBooks();
+}
+
 async function renderAdminOrders() {
   const orders = await api('GET', '/api/orders/admin/all');
   document.getElementById('adminContent').innerHTML = `
@@ -838,7 +986,7 @@ async function renderAdminOrders() {
             <td>$${Number(o.total).toFixed(2)}</td>
             <td>${o.payment_method}</td>
             <td style="font-size:0.85rem">${new Date(o.created_at).toLocaleDateString('en-AU')}</td>
-            <td><span class="status-badge status-${o.status}">${o.status}</span></td>
+            <td><span id="order-status-${o.id}" class="status-badge status-${o.status}">${o.status}</span></td>
             <td>
               <select class="form-select" style="padding:0.25rem 0.5rem;font-size:0.8rem;width:auto" onchange="updateOrderStatus(${o.id}, this.value)">
                 ${['pending','processing','shipped','delivered','cancelled'].map(s => `<option value="${s}" ${s===o.status?'selected':''}>${s}</option>`).join('')}
@@ -851,7 +999,13 @@ async function renderAdminOrders() {
 }
 
 async function updateOrderStatus(id, status) {
-  await api('PUT', `/api/orders/${id}/status`, { status });
+  const r = await api('PUT', `/api/orders/${id}/status`, { status });
+  if (r.error) { toast(r.error, 'error'); return; }
+  const badge = document.getElementById(`order-status-${id}`);
+  if (badge) {
+    badge.className = `status-badge status-${status}`;
+    badge.textContent = status;
+  }
   toast('Order status updated', 'success');
 }
 
@@ -931,14 +1085,15 @@ async function seedTestOrders() {
 
 // ====================== INIT ======================
 async function init() {
-  // Check logged in state
   const r = await api('GET', '/api/auth/me');
   if (r.user) {
     state.user = r.user;
     await loadCart();
   }
   renderNav();
-  navigate('home');
+  const validPages = ['home', 'catalogue', 'cart', 'checkout', 'orders', 'login', 'register', 'admin'];
+  const hash = window.location.hash.slice(1);
+  navigate(validPages.includes(hash) ? hash : 'home');
 }
 
 init();

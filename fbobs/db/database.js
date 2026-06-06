@@ -84,6 +84,15 @@ class Database {
         FOREIGN KEY(book_id) REFERENCES books(id)
       )
     `);
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_number TEXT UNIQUE NOT NULL,
+        order_id INTEGER UNIQUE NOT NULL,
+        issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(order_id) REFERENCES orders(id)
+      )
+    `);
   }
 
   _seedData() {

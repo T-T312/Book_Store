@@ -1,8 +1,9 @@
 class OrderController {
-  constructor(orderRepository, cartRepository, bookRepository) {
+  constructor(orderRepository, cartRepository, bookRepository, invoiceRepository) {
     this.orderRepository = orderRepository;
     this.cartRepository = cartRepository;
     this.bookRepository = bookRepository;
+    this.invoiceRepository = invoiceRepository;
   }
 
   checkout(req, res) {
@@ -13,6 +14,7 @@ class OrderController {
     if (!cartItems.length) return res.json({ error: 'Cart is empty' });
 
     for (const item of cartItems) {
+      if (item.status !== 'active') return res.json({ error: `"${item.title}" is no longer available and cannot be purchased. Please remove it from your cart.` });
       if (item.quantity > item.stock) return res.json({ error: `Insufficient stock for "${item.title}"` });
     }
 
@@ -33,8 +35,17 @@ class OrderController {
       this.bookRepository.decrementStock(item.book_id, item.quantity);
     });
 
+    let invoiceNumber = null;
+    try {
+      invoiceNumber = 'INV-' + String(orderId).padStart(5, '0');
+      this.invoiceRepository.create(orderId, invoiceNumber);
+    } catch (e) {
+      console.error('Invoice creation failed for order', orderId, ':', e.message);
+      invoiceNumber = null;
+    }
+
     this.cartRepository.clear(req.session.user.id);
-    res.json({ success: true, orderId, tracking: trackingId });
+    res.json({ success: true, orderId, tracking: trackingId, invoiceNumber });
   }
 
   getMyOrders(req, res) {
